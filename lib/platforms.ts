@@ -49,5 +49,5 @@ const META: Record<Platform, PlatformMeta> = {
 };
 
 export function getPlatformMeta(platform: Platform): PlatformMeta {
-  return META[platform];
+  return META[platform] ?? META.unknown;
 }

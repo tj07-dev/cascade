@@ -16,11 +16,25 @@ const MIME: Record<OutputFormat, string> = {
 };
 
 function getIp(req: NextRequest): string {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    req.headers.get("x-real-ip") ??
-    "unknown"
-  );
+  // X-Real-IP is set by nginx to $remote_addr — cannot be spoofed
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+  // Take the last XFF entry (closest trusted proxy), not the first (client-controlled)
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const parts = xff.split(",");
+    return parts[parts.length - 1].trim();
+  }
+  return "unknown";
+}
+
+function isValidUrl(raw: string): boolean {
+  try {
+    const { protocol } = new URL(raw);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function sanitizeFilename(name: string): string {
@@ -42,7 +56,11 @@ export async function GET(req: NextRequest) {
   const quality = (searchParams.get("quality") ?? "best") as Quality;
   const title = searchParams.get("title") ?? "download";
 
-  if (!url || !VALID_FORMATS.has(format) || !VALID_QUALITIES.has(quality)) {
+  if (!url || !isValidUrl(url)) {
+    return NextResponse.json<ApiError>({ error: "invalid_url" }, { status: 400 });
+  }
+
+  if (!VALID_FORMATS.has(format) || !VALID_QUALITIES.has(quality)) {
     return NextResponse.json<ApiError>({ error: "invalid_url" }, { status: 400 });
   }
 
@@ -108,12 +126,19 @@ export async function GET(req: NextRequest) {
     start(controller) {
       proc.stdout!.on("data", (chunk: Buffer) => controller.enqueue(chunk));
       proc.stdout!.on("end", () => controller.close());
-      proc.stdout!.on("error", (e) => controller.error(e));
-      proc.stderr!.on("data", () => {}); // drain stderr silently to prevent backpressure
+      proc.stdout!.on("error", (e) => {
+        proc.kill();          // kill child on stdout error
+        controller.error(e);
+      });
+      proc.stderr!.on("data", () => {}); // drain stderr
+      proc.on("close", (code) => {
+        if (code !== 0) {
+          proc.kill();
+          controller.error(new Error(`yt-dlp exited with code ${code}`));
+        }
+      });
     },
-    cancel() {
-      proc.kill();
-    },
+    cancel() { proc.kill(); },
   });
 
   return new Response(readableStream, {

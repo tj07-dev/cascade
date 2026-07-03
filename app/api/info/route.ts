@@ -4,11 +4,16 @@ import { checkRateLimit } from "@/lib/rateLimit";
 import type { ApiError } from "@/types";
 
 function getIp(req: NextRequest): string {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    req.headers.get("x-real-ip") ??
-    "unknown"
-  );
+  // X-Real-IP is set by nginx to $remote_addr — cannot be spoofed
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+  // Take the last XFF entry (closest trusted proxy), not the first (client-controlled)
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const parts = xff.split(",");
+    return parts[parts.length - 1].trim();
+  }
+  return "unknown";
 }
 
 function isValidUrl(raw: string): boolean {

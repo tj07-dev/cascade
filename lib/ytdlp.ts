@@ -33,6 +33,7 @@ export async function fetchMediaInfo(url: string): Promise<MediaInfo> {
       "--dump-json",
       "--no-playlist",
       "--no-warnings",
+      "--",
       url,
     ]);
 
@@ -105,6 +106,7 @@ export async function getDirectUrl(
       "--no-playlist",
       "-f", buildFormatString(format, quality),
       "--no-warnings",
+      "--",
       url,
     ]);
 
@@ -134,6 +136,7 @@ export function spawnDownloadStream(
     "--merge-output-format", format === "webm" ? "webm" : "mp4",
     "-o", "-", // write to stdout
     "--no-warnings",
+    "--",
     url,
   ]);
 }
@@ -153,6 +156,7 @@ export async function spawnAudioToFile(
       "--audio-quality", "0",
       "-o", outPath,
       "--no-warnings",
+      "--",
       url,
     ]);
 
