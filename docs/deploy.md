@@ -17,6 +17,13 @@ This runbook provides step-by-step instructions for deploying the DownloadX appl
 
 ### Step 1: Launch EC2 Instance
 
+**IMPORTANT: Region Selection**
+
+Before proceeding, you must switch the AWS Console region to **Asia Pacific (Mumbai) - ap-south-1**:
+- Click the region selector in the top-right corner of the AWS Console
+- Select **Asia Pacific (Mumbai)** or search for and select **ap-south-1**
+- Confirm the region change before proceeding with instance launch
+
 1. Go to **AWS Console → EC2 → Launch Instance**
 
 2. **Name:** `downloadx`
