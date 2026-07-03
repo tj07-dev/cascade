@@ -111,7 +111,7 @@ export async function getDirectUrl(
     let stdout = "";
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
 
-    const timer = setTimeout(() => { proc.kill(); resolve(null); }, 15_000);
+    const timer = setTimeout(() => { proc.kill(); resolve(null); }, TIMEOUT_MS);
 
     proc.on("close", (code) => {
       clearTimeout(timer);
