@@ -1,6 +1,6 @@
 # AWS EC2 Deployment Runbook
 
-This runbook provides step-by-step instructions for deploying the DownloadX application on AWS EC2 in the Mumbai region (ap-south-1) with SSL/TLS encryption via Let's Encrypt.
+This runbook provides step-by-step instructions for deploying the Cascade application on AWS EC2 in the Mumbai region (ap-south-1) with SSL/TLS encryption via Let's Encrypt.
 
 ---
 
@@ -26,7 +26,7 @@ Before proceeding, you must switch the AWS Console region to **Asia Pacific (Mum
 
 1. Go to **AWS Console → EC2 → Launch Instance**
 
-2. **Name:** `downloadx`
+2. **Name:** `cascade`
 
 3. **AMI Selection:**
    - Search for and select **Amazon Linux 2023** (free tier eligible)
@@ -36,11 +36,11 @@ Before proceeding, you must switch the AWS Console region to **Asia Pacific (Mum
 
 5. **Key Pair:**
    - Click **Create new key pair**
-   - Name: `downloadx`
+   - Name: `cascade`
    - Type: RSA
    - Format: .pem
-   - **Download** the `.pem` file and save to `~/.ssh/downloadx.pem`
-   - Set permissions: `chmod 400 ~/.ssh/downloadx.pem`
+   - **Download** the `.pem` file and save to `~/.ssh/cascade.pem`
+   - Set permissions: `chmod 400 ~/.ssh/cascade.pem`
 
 6. **Network & Security:**
    - Create a new Security Group (or select existing) with inbound rules:
@@ -72,7 +72,7 @@ The instance's public IP will change if stopped/restarted. Use an Elastic IP for
 
 3. **Associate address:**
    - Select the Elastic IP just created
-   - Associate with your `downloadx` instance
+   - Associate with your `cascade` instance
    - Private IP: Select the instance's private IP
    - Click **Associate**
 
@@ -130,10 +130,10 @@ Wait 2-3 minutes for the Elastic IP to fully associate, then configure DNS.
 
 ```bash
 # From your local machine:
-chmod 400 ~/.ssh/downloadx.pem
-ssh -i ~/.ssh/downloadx.pem ec2-user@<Elastic_IP>
+chmod 400 ~/.ssh/cascade.pem
+ssh -i ~/.ssh/cascade.pem ec2-user@<Elastic_IP>
 # Or use your domain once DNS propagates:
-# ssh -i ~/.ssh/downloadx.pem ec2-user@yourdomain.com
+# ssh -i ~/.ssh/cascade.pem ec2-user@yourdomain.com
 ```
 
 Once connected to the EC2 instance, run:
@@ -168,7 +168,7 @@ git --version
 
 ```bash
 exit
-ssh -i ~/.ssh/downloadx.pem ec2-user@<Elastic_IP>
+ssh -i ~/.ssh/cascade.pem ec2-user@<Elastic_IP>
 ```
 
 ---
@@ -177,8 +177,8 @@ ssh -i ~/.ssh/downloadx.pem ec2-user@<Elastic_IP>
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/download-x.git download-x
-cd download-x
+git clone https://github.com/yourusername/cascade.git cascade
+cd cascade
 
 # Replace placeholder with your actual domain in nginx.conf
 sed -i 's/YOUR_DOMAIN_HERE/yourdomain.com/g' nginx.conf
@@ -194,7 +194,7 @@ grep yourdomain.com nginx.conf
 
 ### Step 7: Obtain SSL Certificate via Certbot
 
-The DownloadX stack requires SSL/TLS encryption. We'll use Let's Encrypt with certbot.
+The Cascade stack requires SSL/TLS encryption. We'll use Let's Encrypt with certbot.
 
 **Start nginx first** (without the app) for ACME challenge validation:
 
@@ -247,8 +247,8 @@ sleep 30
 docker compose ps
 # Expected output:
 # NAME                COMMAND             STATUS
-# downloadx-app-1     "npm start"         Up X minutes
-# downloadx-nginx-1   "nginx -g..."       Up X minutes
+# cascade-app-1     "npm start"         Up X minutes
+# cascade-nginx-1   "nginx -g..."       Up X minutes
 ```
 
 ---
@@ -262,7 +262,7 @@ Test the application from your local machine:
 ```bash
 # Test HTTPS homepage
 curl https://yourdomain.com
-# Should return HTML with "DownloadX" or application content
+# Should return HTML with "Cascade" or application content
 
 # Test HTTP redirect (should see redirect to HTTPS)
 curl -I http://yourdomain.com
@@ -316,7 +316,7 @@ sudo crontab -e
 **Add this line to run weekly renewal check (Sunday at midnight):**
 
 ```cron
-0 0 * * 0 certbot renew --quiet && docker compose -f /home/ec2-user/download-x/docker-compose.yml restart nginx
+0 0 * * 0 certbot renew --quiet && docker compose -f /home/ec2-user/cascade/docker-compose.yml restart nginx
 ```
 
 **Verify cron entry:**
@@ -343,10 +343,10 @@ Pull the latest code and redeploy:
 
 ```bash
 # SSH into the instance
-ssh -i ~/.ssh/downloadx.pem ec2-user@yourdomain.com
+ssh -i ~/.ssh/cascade.pem ec2-user@yourdomain.com
 
 # Navigate to application directory
-cd ~/download-x
+cd ~/cascade
 
 # Pull latest changes
 git pull origin main
@@ -554,8 +554,8 @@ For typical usage (downloads ~500MB/month), monthly cost should stay under **$1-
 
 ```bash
 # If you have backed up application data
-rsync -avz /backup/download-x /home/ec2-user/
-cd /home/ec2-user/download-x
+rsync -avz /backup/cascade /home/ec2-user/
+cd /home/ec2-user/cascade
 docker compose up -d
 ```
 

@@ -73,10 +73,10 @@ export default function Home() {
         transition={{ duration: 0.5 }}
       >
         <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          Download<span className="text-violet-400">X</span>
+          Cas<span className="text-violet-400">cade</span>
         </h1>
         <p className="text-slate-400 text-base">
-          Download videos &amp; audio. Fast. Private. No signup.
+          Stream anything. Save everything. No signup.
         </p>
       </motion.div>
 
