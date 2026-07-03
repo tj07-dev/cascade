@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${APP_IMAGE:-cascade-app:latest}
+    image: 477483854563.dkr.ecr.ap-south-1.amazonaws.com/cascade:latest
     restart: unless-stopped
     environment:
       - NODE_ENV=production
