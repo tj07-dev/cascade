@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    image: ${APP_IMAGE:-cascade-app:latest}
     restart: unless-stopped
     environment:
       - NODE_ENV=production
