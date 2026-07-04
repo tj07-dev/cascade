@@ -5,7 +5,7 @@ services:
     environment:
       - NODE_ENV=production
       - YTDLP_POT_PROVIDER_URL=http://bgutil-provider:4416
-      # - RATE_LIMIT_EXEMPT_IPS=1.2.3.4,5.6.7.8
+      - RATE_LIMIT_EXEMPT_IPS=106.222.212.189
     volumes:
       - ./cookies:/app/cookies:ro
     depends_on:
