@@ -21,10 +21,13 @@ function cookieArgs(): string[] {
 }
 
 function isAuthError(stderr: string): boolean {
+  // yt-dlp always suggests --cookies when a site requires an authenticated
+  // session to serve the content (age/login-gated, bot checks, etc).
   return (
     stderr.includes("Sign in to confirm") ||
-    stderr.includes("cookies for the authentication") ||
-    stderr.includes("empty media response")
+    stderr.includes("Account authentication is required") ||
+    stderr.includes("empty media response") ||
+    stderr.includes("--cookies")
   );
 }
 
