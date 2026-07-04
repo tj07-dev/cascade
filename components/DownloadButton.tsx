@@ -19,6 +19,7 @@ const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   auth_required: "This platform is blocking anonymous requests right now. Please try again later.",
   timeout: "Download timed out. Try a shorter video or lower quality.",
   merge_failed: "Couldn't merge video and audio. Try MP4 at 720p instead.",
+  server_busy: "Server is at capacity right now. Please try again in a moment.",
 };
 
 export function DownloadButton({ request, title, onError }: Props) {

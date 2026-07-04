@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchMediaInfo } from "@/lib/ytdlp";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { tryAcquire, release } from "@/lib/concurrency";
+import { isSafeUrl } from "@/lib/urlSafety";
 import type { ApiError } from "@/types";
 
 function getIp(req: NextRequest): string {
@@ -14,15 +16,6 @@ function getIp(req: NextRequest): string {
     return parts[parts.length - 1].trim();
   }
   return "unknown";
-}
-
-function isValidUrl(raw: string): boolean {
-  try {
-    const { protocol } = new URL(raw);
-    return protocol === "http:" || protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 export async function POST(req: NextRequest) {
@@ -41,8 +34,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json<ApiError>({ error: "invalid_url" }, { status: 400 });
   }
 
-  if (!url || !isValidUrl(url)) {
+  if (!url || !(await isSafeUrl(url))) {
     return NextResponse.json<ApiError>({ error: "invalid_url" }, { status: 400 });
+  }
+
+  if (!tryAcquire(ip)) {
+    return NextResponse.json<ApiError>({ error: "server_busy" }, { status: 503 });
   }
 
   try {
@@ -60,5 +57,7 @@ export async function POST(req: NextRequest) {
       code === "unsupported_site" ? 400 :
       code === "auth_required" ? 401 : 500;
     return NextResponse.json<ApiError>({ error: code }, { status });
+  } finally {
+    release(ip);
   }
 }

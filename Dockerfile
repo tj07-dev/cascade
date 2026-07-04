@@ -13,7 +13,9 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache python3 py3-pip ffmpeg deno
-RUN pip install yt-dlp bgutil-ytdlp-pot-provider --break-system-packages
+# Pinned: yt-dlp's error strings drive lib/ytdlp.ts's error classification,
+# and unpinned upgrades have silently broken that matching before.
+RUN pip install yt-dlp==2026.06.09 bgutil-ytdlp-pot-provider==1.3.1 --break-system-packages
 
 ENV NODE_ENV=production
 COPY --from=builder /app/.next/standalone ./

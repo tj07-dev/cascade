@@ -3,7 +3,9 @@ import { createReadStream, unlink } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { checkRateLimit } from "@/lib/rateLimit";
-import { getDirectUrl, spawnDownloadStream, spawnAudioToFile } from "@/lib/ytdlp";
+import { tryAcquire, release } from "@/lib/concurrency";
+import { isSafeUrl } from "@/lib/urlSafety";
+import { getDirectUrl, spawnDownloadStream, spawnAudioToFile, killProcessTree } from "@/lib/ytdlp";
 import type { ApiError, ApiErrorCode, AudioFormat, OutputFormat, Quality } from "@/types";
 
 const VALID_FORMATS = new Set<OutputFormat>(["mp4", "webm", "mp3", "wav"]);
@@ -28,15 +30,6 @@ function getIp(req: NextRequest): string {
   return "unknown";
 }
 
-function isValidUrl(raw: string): boolean {
-  try {
-    const { protocol } = new URL(raw);
-    return protocol === "http:" || protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function sanitizeFilename(name: string): string {
   return name.replace(/[^\w\s\-_.]/g, "").trim().slice(0, 120) || "download";
 }
@@ -56,12 +49,16 @@ export async function GET(req: NextRequest) {
   const quality = (searchParams.get("quality") ?? "best") as Quality;
   const title = searchParams.get("title") ?? "download";
 
-  if (!url || !isValidUrl(url)) {
+  if (!url || !(await isSafeUrl(url))) {
     return NextResponse.json<ApiError>({ error: "invalid_url" }, { status: 400 });
   }
 
   if (!VALID_FORMATS.has(format) || !VALID_QUALITIES.has(quality)) {
     return NextResponse.json<ApiError>({ error: "invalid_url" }, { status: 400 });
+  }
+
+  if (!tryAcquire(ip)) {
+    return NextResponse.json<ApiError>({ error: "server_busy" }, { status: 503 });
   }
 
   const filename = `${sanitizeFilename(title)}.${format}`;
@@ -74,33 +71,9 @@ export async function GET(req: NextRequest) {
     const tmpPath = `${tmpBase}.${format}`;
 
     try {
-      await spawnAudioToFile(url, format as AudioFormat, quality, tmpBase);
-
-      const fileStream = createReadStream(tmpPath);
-      const readableStream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          fileStream.on("data", (chunk) => {
-            controller.enqueue(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
-          });
-          fileStream.on("end", () => {
-            controller.close();
-            unlink(tmpPath, () => {});
-          });
-          fileStream.on("error", (e) => {
-            controller.error(e);
-            unlink(tmpPath, () => {});
-          });
-        },
-      });
-
-      return new Response(readableStream, {
-        headers: {
-          "Content-Type": MIME[format],
-          "Content-Disposition": `attachment; filename="${filename}"`,
-          "X-Accel-Buffering": "no",
-        },
-      });
+      await spawnAudioToFile(url, format as AudioFormat, quality, tmpBase, req.signal);
     } catch (err) {
+      release(ip);
       unlink(tmpPath, () => {}); // best-effort cleanup on error
       const code = err instanceof Error ? err.message : "download_failed";
       const errorCode: ApiErrorCode = AUDIO_ERROR_CODES.has(code as ApiErrorCode)
@@ -108,37 +81,86 @@ export async function GET(req: NextRequest) {
         : "download_failed";
       return NextResponse.json<ApiError>({ error: errorCode }, { status: 500 });
     }
+
+    // The heavy yt-dlp/ffmpeg work is done; streaming the resulting file
+    // from disk is comparatively cheap and doesn't need the CPU-bound slot.
+    release(ip);
+
+    const fileStream = createReadStream(tmpPath);
+    const readableStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        fileStream.on("data", (chunk) => {
+          controller.enqueue(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+        });
+        fileStream.on("end", () => {
+          controller.close();
+          unlink(tmpPath, () => {});
+        });
+        fileStream.on("error", (e) => {
+          controller.error(e);
+          unlink(tmpPath, () => {});
+        });
+      },
+      cancel() {
+        fileStream.destroy();
+        unlink(tmpPath, () => {});
+      },
+    });
+
+    return new Response(readableStream, {
+      headers: {
+        "Content-Type": MIME[format],
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "X-Accel-Buffering": "no",
+      },
+    });
   }
 
   // Video: try direct URL redirect first (avoids proxying large file through server)
-  try {
-    const directUrl = await getDirectUrl(url, format, quality);
-    if (directUrl) {
-      return NextResponse.json({ redirectUrl: directUrl });
-    }
-  } catch {
-    // fall through to streaming
+  const directUrl = await getDirectUrl(url, format, quality);
+  release(ip);
+  if (directUrl) {
+    return NextResponse.json({ redirectUrl: directUrl });
   }
 
   // Video: stream via yt-dlp stdout when direct URL is unavailable
+  if (!tryAcquire(ip)) {
+    return NextResponse.json<ApiError>({ error: "server_busy" }, { status: 503 });
+  }
+
   const proc = spawnDownloadStream(url, format, quality);
+  let released = false;
+  const releaseOnce = () => {
+    if (released) return;
+    released = true;
+    release(ip);
+  };
+
   const readableStream = new ReadableStream<Uint8Array>({
     start(controller) {
       proc.stdout!.on("data", (chunk: Buffer) => controller.enqueue(chunk));
       proc.stdout!.on("end", () => controller.close());
       proc.stdout!.on("error", (e) => {
-        proc.kill();          // kill child on stdout error
+        killProcessTree(proc);
         controller.error(e);
       });
       proc.stderr!.on("data", () => {}); // drain stderr
+      proc.on("error", () => {
+        releaseOnce();
+        controller.error(new Error("download_failed"));
+      });
       proc.on("close", (code) => {
+        releaseOnce();
         if (code !== 0) {
-          proc.kill();
+          killProcessTree(proc);
           controller.error(new Error(`yt-dlp exited with code ${code}`));
         }
       });
     },
-    cancel() { proc.kill(); },
+    cancel() {
+      killProcessTree(proc);
+      releaseOnce();
+    },
   });
 
   return new Response(readableStream, {

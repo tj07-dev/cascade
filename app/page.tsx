@@ -19,6 +19,7 @@ const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   auth_required: "This platform is blocking anonymous requests right now. Please try again later.",
   timeout: "Download timed out. Try a shorter video or lower quality.",
   merge_failed: "Couldn't merge video and audio. Try MP4 at 720p instead.",
+  server_busy: "Server is at capacity right now. Please try again in a moment.",
 };
 
 export default function Home() {
@@ -172,6 +173,18 @@ export default function Home() {
           ))}
         </motion.div>
       )}
+
+      <footer className="mt-4 text-center text-xs text-slate-600">
+        Built by{" "}
+        <a
+          href="https://www.tjdev.in"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-500 hover:text-violet-400 transition-colors"
+        >
+          tjdev.in
+        </a>
+      </footer>
     </main>
   );
 }

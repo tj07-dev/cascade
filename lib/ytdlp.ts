@@ -12,6 +12,9 @@ import type {
 const YTDLP = process.env.YTDLP_PATH ?? "yt-dlp";
 const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const COOKIES_PATH = process.env.YTDLP_COOKIES_PATH ?? "/app/cookies/cookies.txt";
+// Single small instance with limited disk — cap how much a single download
+// can write rather than letting yt-dlp/ffmpeg fill /tmp or the data volume.
+const MAX_FILESIZE = process.env.YTDLP_MAX_FILESIZE ?? "2G";
 
 // Sites (YouTube, Instagram, ...) increasingly require a logged-in session
 // to serve metadata/formats to datacenter IPs. When a cookies.txt is mounted
@@ -40,6 +43,22 @@ function isAuthError(stderr: string): boolean {
   );
 }
 
+// yt-dlp spawns ffmpeg as a child of its own process. A plain proc.kill()
+// only signals yt-dlp itself and can leave ffmpeg running to completion.
+// Spawning detached puts yt-dlp (and anything it forks) in its own process
+// group, so killing -pid reaches the whole tree.
+export function killProcessTree(proc: ChildProcess): void {
+  if (proc.pid) {
+    try {
+      process.kill(-proc.pid, "SIGKILL");
+      return;
+    } catch {
+      // fall through to killing just the parent
+    }
+  }
+  proc.kill();
+}
+
 export function buildFormatString(format: OutputFormat, quality: Quality): string {
   if (format === "mp3" || format === "wav" || quality === "audio") {
     return "bestaudio/best";
@@ -66,14 +85,19 @@ export async function fetchMediaInfo(url: string): Promise<MediaInfo> {
       ...potArgs(),
       "--",
       url,
-    ]);
+    ], { detached: true });
 
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 
-    const timer = setTimeout(() => { proc.kill(); reject(new Error("timeout")); }, TIMEOUT_MS);
+    const timer = setTimeout(() => { killProcessTree(proc); reject(new Error("timeout")); }, TIMEOUT_MS);
+
+    proc.on("error", () => {
+      clearTimeout(timer);
+      reject(new Error("download_failed"));
+    });
 
     proc.on("close", (code) => {
       clearTimeout(timer);
@@ -90,7 +114,10 @@ export async function fetchMediaInfo(url: string): Promise<MediaInfo> {
         return;
       }
       try {
-        const raw = JSON.parse(stdout) as Record<string, unknown>;
+        // --dump-json emits one JSON object per line for multi-item posts
+        // (Instagram carousels, Reddit galleries, X threads); take the first.
+        const firstLine = stdout.trim().split("\n").filter(Boolean)[0] ?? "";
+        const raw = JSON.parse(firstLine) as Record<string, unknown>;
         const formats: MediaFormat[] = (
           (raw.formats as Record<string, unknown>[] | undefined) ?? []
         )
@@ -143,12 +170,17 @@ export async function getDirectUrl(
       ...potArgs(),
       "--",
       url,
-    ]);
+    ], { detached: true });
 
     let stdout = "";
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
 
-    const timer = setTimeout(() => { proc.kill(); resolve(null); }, TIMEOUT_MS);
+    const timer = setTimeout(() => { killProcessTree(proc); resolve(null); }, TIMEOUT_MS);
+
+    proc.on("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
 
     proc.on("close", (code) => {
       clearTimeout(timer);
@@ -169,20 +201,22 @@ export function spawnDownloadStream(
     "--no-playlist",
     "-f", buildFormatString(format, quality),
     "--merge-output-format", format === "webm" ? "webm" : "mp4",
+    "--max-filesize", MAX_FILESIZE,
     "-o", "-", // write to stdout
     "--no-warnings",
     ...cookieArgs(),
     ...potArgs(),
     "--",
     url,
-  ]);
+  ], { detached: true });
 }
 
 export async function spawnAudioToFile(
   url: string,
   format: AudioFormat,
   quality: Quality,
-  outPath: string
+  outPath: string,
+  signal?: AbortSignal
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(YTDLP, [
@@ -191,24 +225,39 @@ export async function spawnAudioToFile(
       "--extract-audio",
       "--audio-format", format,
       "--audio-quality", "0",
+      "--max-filesize", MAX_FILESIZE,
       "-o", outPath,
       "--no-warnings",
       ...cookieArgs(),
       ...potArgs(),
       "--",
       url,
-    ]);
+    ], { detached: true });
 
     let stderr = "";
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 
     const timer = setTimeout(
-      () => { proc.kill(); reject(new Error("timeout")); },
+      () => { killProcessTree(proc); reject(new Error("timeout")); },
       TIMEOUT_MS
     );
 
+    const onAbort = () => {
+      clearTimeout(timer);
+      killProcessTree(proc);
+      reject(new Error("aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    proc.on("error", () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error("download_failed"));
+    });
+
     proc.on("close", (code) => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       if (code !== 0) {
         const code_ = isAuthError(stderr)
           ? "auth_required"

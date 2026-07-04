@@ -55,7 +55,8 @@ export type ApiErrorCode =
   | "download_failed"
   | "auth_required"
   | "timeout"
-  | "merge_failed";
+  | "merge_failed"
+  | "server_busy";
 
 export interface ApiError {
   error: ApiErrorCode;
