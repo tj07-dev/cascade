@@ -20,6 +20,15 @@ function cookieArgs(): string[] {
   return existsSync(COOKIES_PATH) ? ["--cookies", COOKIES_PATH] : [];
 }
 
+// bgutil-provider (see docker-compose.yml) generates YouTube PO tokens so
+// yt-dlp can pass its bot check without needing a logged-in account.
+const POT_PROVIDER_URL = process.env.YTDLP_POT_PROVIDER_URL;
+function potArgs(): string[] {
+  return POT_PROVIDER_URL
+    ? ["--extractor-args", `youtubepot-bgutilhttp:base_url=${POT_PROVIDER_URL}`]
+    : [];
+}
+
 function isAuthError(stderr: string): boolean {
   // yt-dlp always suggests --cookies when a site requires an authenticated
   // session to serve the content (age/login-gated, bot checks, etc).
@@ -54,6 +63,7 @@ export async function fetchMediaInfo(url: string): Promise<MediaInfo> {
       "--no-playlist",
       "--no-warnings",
       ...cookieArgs(),
+      ...potArgs(),
       "--",
       url,
     ]);
@@ -130,6 +140,7 @@ export async function getDirectUrl(
       "-f", buildFormatString(format, quality),
       "--no-warnings",
       ...cookieArgs(),
+      ...potArgs(),
       "--",
       url,
     ]);
@@ -161,6 +172,7 @@ export function spawnDownloadStream(
     "-o", "-", // write to stdout
     "--no-warnings",
     ...cookieArgs(),
+    ...potArgs(),
     "--",
     url,
   ]);
@@ -182,6 +194,7 @@ export async function spawnAudioToFile(
       "-o", outPath,
       "--no-warnings",
       ...cookieArgs(),
+      ...potArgs(),
       "--",
       url,
     ]);

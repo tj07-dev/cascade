@@ -4,8 +4,20 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
+      - YTDLP_POT_PROVIDER_URL=http://bgutil-provider:4416
     volumes:
       - ./cookies:/app/cookies:ro
+    depends_on:
+      - bgutil-provider
+    networks:
+      - web
+
+  # Generates YouTube PO tokens so yt-dlp can authenticate as a real browser
+  # without needing a logged-in account's cookies.
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    init: true
+    restart: unless-stopped
     networks:
       - web
 

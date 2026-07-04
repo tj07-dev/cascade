@@ -13,7 +13,7 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache python3 py3-pip ffmpeg
-RUN pip install yt-dlp --break-system-packages
+RUN pip install yt-dlp bgutil-ytdlp-pot-provider --break-system-packages
 
 ENV NODE_ENV=production
 COPY --from=builder /app/.next/standalone ./
