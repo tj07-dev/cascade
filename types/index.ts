@@ -53,6 +53,7 @@ export type ApiErrorCode =
   | "private_video"
   | "rate_limited"
   | "download_failed"
+  | "auth_required"
   | "timeout"
   | "merge_failed";
 

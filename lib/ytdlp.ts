@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
+import { existsSync } from "fs";
 import type {
   MediaInfo,
   MediaFormat,
@@ -10,6 +11,22 @@ import type {
 
 const YTDLP = process.env.YTDLP_PATH ?? "yt-dlp";
 const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const COOKIES_PATH = process.env.YTDLP_COOKIES_PATH ?? "/app/cookies/cookies.txt";
+
+// Sites (YouTube, Instagram, ...) increasingly require a logged-in session
+// to serve metadata/formats to datacenter IPs. When a cookies.txt is mounted
+// (see docker-compose.yml), pass it through so yt-dlp authenticates.
+function cookieArgs(): string[] {
+  return existsSync(COOKIES_PATH) ? ["--cookies", COOKIES_PATH] : [];
+}
+
+function isAuthError(stderr: string): boolean {
+  return (
+    stderr.includes("Sign in to confirm") ||
+    stderr.includes("cookies for the authentication") ||
+    stderr.includes("empty media response")
+  );
+}
 
 export function buildFormatString(format: OutputFormat, quality: Quality): string {
   if (format === "mp3" || format === "wav" || quality === "audio") {
@@ -33,6 +50,7 @@ export async function fetchMediaInfo(url: string): Promise<MediaInfo> {
       "--dump-json",
       "--no-playlist",
       "--no-warnings",
+      ...cookieArgs(),
       "--",
       url,
     ]);
@@ -51,6 +69,8 @@ export async function fetchMediaInfo(url: string): Promise<MediaInfo> {
           reject(new Error("private_video"));
         } else if (stderr.includes("not supported") || stderr.includes("Unsupported URL")) {
           reject(new Error("unsupported_site"));
+        } else if (isAuthError(stderr)) {
+          reject(new Error("auth_required"));
         } else {
           reject(new Error("download_failed"));
         }
@@ -106,6 +126,7 @@ export async function getDirectUrl(
       "--no-playlist",
       "-f", buildFormatString(format, quality),
       "--no-warnings",
+      ...cookieArgs(),
       "--",
       url,
     ]);
@@ -136,6 +157,7 @@ export function spawnDownloadStream(
     "--merge-output-format", format === "webm" ? "webm" : "mp4",
     "-o", "-", // write to stdout
     "--no-warnings",
+    ...cookieArgs(),
     "--",
     url,
   ]);
@@ -156,6 +178,7 @@ export async function spawnAudioToFile(
       "--audio-quality", "0",
       "-o", outPath,
       "--no-warnings",
+      ...cookieArgs(),
       "--",
       url,
     ]);
@@ -171,7 +194,12 @@ export async function spawnAudioToFile(
     proc.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        reject(new Error(stderr.includes("merge") ? "merge_failed" : "download_failed"));
+        const code_ = isAuthError(stderr)
+          ? "auth_required"
+          : stderr.includes("merge")
+          ? "merge_failed"
+          : "download_failed";
+        reject(new Error(code_));
       } else {
         resolve();
       }

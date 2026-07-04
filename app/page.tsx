@@ -16,6 +16,7 @@ const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   private_video: "This video is private or restricted and can't be downloaded.",
   rate_limited: "You've hit the hourly limit. Try again in an hour.",
   download_failed: "Download failed. The platform may have changed. Try again shortly.",
+  auth_required: "This platform is blocking anonymous requests right now. Please try again later.",
   timeout: "Download timed out. Try a shorter video or lower quality.",
   merge_failed: "Couldn't merge video and audio. Try MP4 at 720p instead.",
 };

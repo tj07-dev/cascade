@@ -41,7 +41,7 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^\w\s\-_.]/g, "").trim().slice(0, 120) || "download";
 }
 
-const AUDIO_ERROR_CODES = new Set<ApiErrorCode>(["merge_failed", "timeout", "download_failed"]);
+const AUDIO_ERROR_CODES = new Set<ApiErrorCode>(["merge_failed", "timeout", "auth_required", "download_failed"]);
 
 export async function GET(req: NextRequest) {
   const ip = getIp(req);

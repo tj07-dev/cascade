@@ -50,13 +50,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(info);
   } catch (err) {
     const message = err instanceof Error ? err.message : "download_failed";
-    const validCodes = ["private_video", "unsupported_site", "download_failed", "timeout"] as const;
+    const validCodes = ["private_video", "unsupported_site", "auth_required", "download_failed", "timeout"] as const;
     type ValidCode = (typeof validCodes)[number];
     const code: ValidCode = (validCodes as readonly string[]).includes(message)
       ? (message as ValidCode)
       : "download_failed";
     const status =
-      code === "private_video" ? 403 : code === "unsupported_site" ? 400 : 500;
+      code === "private_video" ? 403 :
+      code === "unsupported_site" ? 400 :
+      code === "auth_required" ? 401 : 500;
     return NextResponse.json<ApiError>({ error: code }, { status });
   }
 }
